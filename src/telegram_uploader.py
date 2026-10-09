@@ -58,6 +58,15 @@ async def _upload(path: Path, caption: str) -> int:
         me = await client.get_me()
         if not me.is_bot:
             raise RuntimeError("PYROGRAM_SESSION_STRING must belong to the configured bot, not a user account.")
+        try:
+            token_bot_id = int(bot_token.split(":", 1)[0])
+        except (ValueError, IndexError) as exc:
+            raise RuntimeError("BOT_TOKEN does not have the expected Telegram bot-token format.") from exc
+        if int(me.id) != token_bot_id:
+            raise RuntimeError(
+                "The active Pyrogram session belongs to a different bot than BOT_TOKEN. "
+                "Regenerate PYROGRAM_SESSION_STRING with the configured BOT_TOKEN."
+            )
 
         upload_target: int | str = target
 
