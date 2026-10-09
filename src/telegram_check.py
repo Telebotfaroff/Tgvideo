@@ -63,13 +63,15 @@ def verify_bot_api(token: str, target: str) -> dict:
     return chat
 
 
-async def verify_pyrogram(api_id: int, api_hash: str, token: str, target: str, expected_chat_id: int) -> bool:
-    """Diagnostic only: Bot API verification is authoritative for bot posting access.
-
-    Pyrogram bot sessions cannot use get_dialogs(), and a fresh in-memory
-    MTProto session may lack the access hash for a private channel's numeric ID.
-    That transport limitation should not invalidate the Bot API permission test.
-    """
+async def verify_pyrogram(
+    api_id: int,
+    api_hash: str,
+    token: str,
+    target: str,
+    expected_chat_id: int,
+    peer_source: str = "",
+) -> bool:
+    """Verify this fresh bot-authorized MTProto session can resolve the private channel."""
     app = Client(
         name="telegram-verification",
         api_id=api_id,
@@ -81,29 +83,39 @@ async def verify_pyrogram(api_id: int, api_hash: str, token: str, target: str, e
         async with app:
             me = await app.get_me()
             print(f"PASS Pyrogram bot authentication: @{me.username or 'no_username'} (id={me.id})")
-            try:
-                chat = await app.get_chat(target)
-                if chat.id != expected_chat_id:
+
+            # MTProto needs a channel access_hash, not just the Bot API's numeric ID.
+            # A private invite link may allow Pyrogram to fetch/cache that peer.
+            candidates = []
+            if peer_source:
+                candidates.append(("PYROGRAM_PEER_SOURCE", peer_source))
+            candidates.append(("TELEGRAM_TARGET", target))
+
+            for source_name, source_value in candidates:
+                try:
+                    chat = await app.get_chat(source_value)
+                    if int(chat.id) != expected_chat_id:
+                        print(f"INFO {source_name} resolved ID {chat.id}, expected {expected_chat_id}; skipping.")
+                        continue
+                    await app.resolve_peer(chat.id)
                     print(
-                        f"WARNING Pyrogram resolved a different destination: "
-                        f"{chat.id} (Bot API resolved {expected_chat_id})."
+                        f"PASS Pyrogram peer resolved via {source_name}: "
+                        f"title={getattr(chat, 'title', None)!r}, type={chat.type}, id={chat.id}"
                     )
-                    return False
-                print(f"PASS Pyrogram destination resolved: type={chat.type}, id={chat.id}")
-                return True
-            except Exception as exc:
-                print(
-                    "WARNING Pyrogram could not resolve the destination in this fresh bot session "
-                    f"({type(exc).__name__}: {exc}). The Bot API independently verified the "
-                    "channel and posting permissions. MTProto upload readiness is not confirmed."
-                )
-                return False
+                    print("PASS Pyrogram resolved the channel InputPeer/access hash.")
+                    return True
+                except Exception as exc:
+                    print(f"INFO Pyrogram lookup via {source_name} failed: {type(exc).__name__}: {exc}")
+
+            print(
+                "FAIL Pyrogram cannot resolve the private channel from this fresh bot session. "
+                "Set GitHub secret PYROGRAM_PEER_SOURCE to a valid private invite link for this "
+                "channel (bot must already be a member/admin), or to its public @username. "
+                "It must resolve to the same channel as TELEGRAM_TARGET."
+            )
+            return False
     except Exception as exc:
-        print(
-            "WARNING Pyrogram diagnostic could not complete "
-            f"({type(exc).__name__}: {exc}). Bot API verification remains authoritative "
-            "for the bot token and destination permissions."
-        )
+        print(f"FAIL Pyrogram bot authorization: {type(exc).__name__}: {exc}")
         return False
 
 
@@ -115,15 +127,17 @@ def main() -> int:
         target = required("TELEGRAM_TARGET")
 
         chat = verify_bot_api(token, target)
-        pyrogram_ok = asyncio.run(verify_pyrogram(api_id, api_hash, token, target, int(chat["id"])))
+        peer_source = os.environ.get("PYROGRAM_PEER_SOURCE", "").strip()
+        pyrogram_ok = asyncio.run(
+            verify_pyrogram(api_id, api_hash, token, target, int(chat["id"]), peer_source)
+        )
         if not pyrogram_ok:
             print(
-                "RESULT: PASS — Bot API authentication, channel access, membership, and posting "
-                "permissions are valid. WARNING — Pyrogram MTProto peer resolution needs separate "
-                "attention before using the Pyrogram uploader."
+                "RESULT: FAIL — Bot API credentials/permissions are valid, but Pyrogram upload "
+                "readiness is not verified. Configure PYROGRAM_PEER_SOURCE and rerun this test."
             )
-        else:
-            print("RESULT: PASS — Bot API and Pyrogram destination checks succeeded.")
+            return 1
+        print("RESULT: PASS — Bot API permissions and Pyrogram private-channel peer resolution succeeded.")
         return 0
     except Exception as exc:
         print(f"FAIL Telegram verification: {type(exc).__name__}: {exc}", file=sys.stderr)
