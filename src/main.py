@@ -151,7 +151,7 @@ def scan(channel_url: str, key: str) -> dict:
 def _select_queue(manifest: dict, operation: str, batch_size: int) -> list[dict]:
     statuses = {
         "process": {"pending"},
-        "resume": {"pending", "downloaded"},
+        "resume": {"pending", "downloading", "downloaded"},
         "retry_failed": {"failed"},
     }
     allowed = statuses.get(operation, set())
