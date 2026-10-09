@@ -1,5 +1,5 @@
-# Pin and review versions before production deployment.
 yt-dlp
 Pyrogram
 TgCrypto
 requests
+beautifulsoup4
