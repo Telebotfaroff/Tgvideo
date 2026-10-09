@@ -29,10 +29,15 @@ async def _upload(path: Path, caption: str) -> int:
 
     async with client:
         upload_target: int | str = target
-        if peer_source:
-            # A numeric private-channel ID alone does not carry MTProto's
-            # channel access_hash. Resolve the private invite link (or public
-            # username) first so Pyrogram caches the correct InputPeer.
+
+        # If a public @username is supplied, resolve it normally. Private invite
+        # links are intentionally not passed to get_chat(): Telegram's
+        # messages.checkChatInvite method is user-only and returns
+        # BOT_METHOD_INVALID for bot-authorized Pyrogram sessions.
+        if peer_source and not (
+            "t.me/+" in peer_source or "t.me/joinchat/" in peer_source
+            or "telegram.me/+" in peer_source or "telegram.me/joinchat/" in peer_source
+        ):
             chat = await client.get_chat(peer_source)
             if target.lstrip("-").isdigit() and int(chat.id) != int(target):
                 raise RuntimeError(
@@ -40,17 +45,24 @@ async def _upload(path: Path, caption: str) -> int:
                 )
             await client.resolve_peer(chat.id)
             upload_target = chat.id
+
         elif target.startswith("-100") and target[1:].isdigit():
-            # Do not pretend a Bot API-valid ID is necessarily enough for MTProto.
-            try:
-                await client.resolve_peer(int(target))
-            except Exception as exc:
-                raise RuntimeError(
-                    "Pyrogram cannot resolve the private channel from TELEGRAM_TARGET alone. "
-                    "Add GitHub secret PYROGRAM_PEER_SOURCE containing a valid private invite "
-                    "link for this channel (or its public @username). The bot must already have "
-                    "access, and the source must identify the same destination."
-                ) from exc
+            # Telegram's MTProto peer database permits access_hash=0 for bots
+            # when the channel ID is known but the bot session has no cached
+            # access hash. Seed Pyrogram's peer cache before send_video().
+            channel_id = int(target[4:])
+            await client.storage.update_peers(
+                [(int(target), 0, "channel", None, None)]
+            )
+            peer = await client.resolve_peer(int(target))
+            if getattr(peer, "channel_id", None) != channel_id:
+                raise RuntimeError("Pyrogram resolved a peer that does not match TELEGRAM_TARGET.")
+            upload_target = int(target)
+
+        else:
+            # Preserve support for public usernames and ordinary numeric chats.
+            upload_target = int(target) if target.lstrip("-").isdigit() else target
+            await client.resolve_peer(upload_target)
 
         sent = await client.send_video(
             chat_id=upload_target,
