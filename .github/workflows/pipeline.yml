@@ -48,6 +48,7 @@ jobs:
       API_HASH: ${{ secrets.API_HASH }}
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
       TELEGRAM_TARGET: ${{ secrets.TELEGRAM_TARGET }}
+      PYROGRAM_PEER_SOURCE: ${{ secrets.PYROGRAM_PEER_SOURCE }}
       PYTHONUNBUFFERED: "1"
 
     steps:
