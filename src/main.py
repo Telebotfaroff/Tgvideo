@@ -155,7 +155,22 @@ def _select_queue(manifest: dict, operation: str, batch_size: int) -> list[dict]
         "retry_failed": {"failed"},
     }
     allowed = statuses.get(operation, set())
-    return [v for v in manifest.get("videos", []) if v.get("status") in allowed][:batch_size]
+    def eligible(video: dict) -> bool:
+        if video.get("status") in allowed:
+            return True
+        # A previous run may have left an invalid-token authorization error in
+        # 'uploading'. Telegram rejects that before send_video, so retrying it
+        # cannot create a duplicate message.
+        error_text = str(video.get("last_error") or "")
+        return (
+            operation == "retry_failed"
+            and video.get("status") == "uploading"
+            and (
+                "ACCESS_TOKEN_INVALID" in error_text
+                or "auth.ImportBotAuthorization" in error_text
+            )
+        )
+    return [v for v in manifest.get("videos", []) if eligible(v)][:batch_size]
 
 
 def process_batch(key: str, operation: str, batch_size: int, dry_run: bool) -> None:
