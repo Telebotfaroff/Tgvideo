@@ -3,7 +3,7 @@
   "channel_key": "s1-no1-style",
   "source_url": "https://javtiful.com/channel/s1-no1-style",
   "created_at": "2026-10-09T18:21:08.799997+00:00",
-  "updated_at": "2026-10-09T18:58:21.783736+00:00",
+  "updated_at": "2026-10-09T19:00:45.396686+00:00",
   "total_discovered": 4101,
   "videos": [
     {
@@ -27,11 +27,12 @@
       "status": "uploading",
       "attempts": 1,
       "telegram_message_id": null,
-      "last_error": null,
+      "last_error": "ChannelInvalid: Telegram says: [400 CHANNEL_INVALID] - The channel parameter is invalid (caused by \"messages.SendMedia\")",
       "discovered_at": "2026-10-09T18:24:13.728547+00:00",
       "last_seen_at": "2026-10-09T18:24:13.728548+00:00",
       "downloaded_bytes": 1070751137,
-      "upload_started_at": "2026-10-09T18:58:21.783712+00:00"
+      "upload_started_at": "2026-10-09T18:58:21.783712+00:00",
+      "failed_at": "2026-10-09T19:00:45.396673+00:00"
     },
     {
       "source_id": "114381",
