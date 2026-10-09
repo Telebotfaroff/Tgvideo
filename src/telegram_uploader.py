@@ -7,6 +7,34 @@ from pathlib import Path
 from pyrogram import Client
 
 
+def _client(api_id: int, api_hash: str, bot_token: str) -> Client:
+    session_string = os.environ.get("PYROGRAM_SESSION_STRING", "").strip()
+    if session_string:
+        # Keep the same MTProto auth key between GitHub Actions runs. Telegram
+        # access hashes are tied to an authorization session, not just a bot ID.
+        return Client(
+            "tgvideo_bot",
+            api_id=api_id,
+            api_hash=api_hash,
+            session_string=session_string,
+            in_memory=True,
+        )
+    return Client(
+        "tgvideo_bot",
+        api_id=api_id,
+        api_hash=api_hash,
+        bot_token=bot_token,
+        in_memory=True,
+    )
+
+
+def _is_invite_link(value: str) -> bool:
+    value = value.lower()
+    return any(marker in value for marker in (
+        "t.me/+", "t.me/joinchat/", "telegram.me/+", "telegram.me/joinchat/"
+    ))
+
+
 async def _upload(path: Path, caption: str) -> int:
     required = ("API_ID", "API_HASH", "BOT_TOKEN", "TELEGRAM_TARGET")
     missing = [name for name in required if not os.environ.get(name)]
@@ -17,27 +45,24 @@ async def _upload(path: Path, caption: str) -> int:
     except ValueError as exc:
         raise RuntimeError("API_ID must be an integer") from exc
 
-    client = Client(
-        "tgvideo_bot",
-        api_id=api_id,
-        api_hash=os.environ["API_HASH"],
-        bot_token=os.environ["BOT_TOKEN"],
-        in_memory=True,
-    )
+    api_hash = os.environ["API_HASH"].strip()
+    bot_token = os.environ["BOT_TOKEN"].strip()
     target = os.environ["TELEGRAM_TARGET"].strip()
     peer_source = os.environ.get("PYROGRAM_PEER_SOURCE", "").strip()
+    session_string = os.environ.get("PYROGRAM_SESSION_STRING", "").strip()
+    access_hash_text = os.environ.get("PYROGRAM_CHANNEL_ACCESS_HASH", "").strip()
+
+    client = _client(api_id, api_hash, bot_token)
 
     async with client:
+        me = await client.get_me()
+        if not me.is_bot:
+            raise RuntimeError("PYROGRAM_SESSION_STRING must belong to the configured bot, not a user account.")
+
         upload_target: int | str = target
 
-        # If a public @username is supplied, resolve it normally. Private invite
-        # links are intentionally not passed to get_chat(): Telegram's
-        # messages.checkChatInvite method is user-only and returns
-        # BOT_METHOD_INVALID for bot-authorized Pyrogram sessions.
-        if peer_source and not (
-            "t.me/+" in peer_source or "t.me/joinchat/" in peer_source
-            or "telegram.me/+" in peer_source or "telegram.me/joinchat/" in peer_source
-        ):
+        # Public usernames resolve the channel and its real access hash normally.
+        if peer_source and not _is_invite_link(peer_source):
             chat = await client.get_chat(peer_source)
             if target.lstrip("-").isdigit() and int(chat.id) != int(target):
                 raise RuntimeError(
@@ -47,20 +72,42 @@ async def _upload(path: Path, caption: str) -> int:
             upload_target = chat.id
 
         elif target.startswith("-100") and target[1:].isdigit():
-            # Telegram's MTProto peer database permits access_hash=0 for bots
-            # when the channel ID is known but the bot session has no cached
-            # access hash. Seed Pyrogram's peer cache before send_video().
+            # A Bot API chat ID alone is insufficient for MTProto. The previous
+            # zero-access-hash workaround passed peer construction but Telegram
+            # rejected the actual upload with CHANNEL_INVALID.
+            if not session_string:
+                raise RuntimeError(
+                    "Private-channel MTProto upload needs a persistent bot session. "
+                    "Set PYROGRAM_SESSION_STRING and PYROGRAM_CHANNEL_ACCESS_HASH. "
+                    "A fresh bot_token session plus numeric channel ID cannot discover "
+                    "the private channel access hash by itself."
+                )
+            if not access_hash_text:
+                raise RuntimeError(
+                    "Missing PYROGRAM_CHANNEL_ACCESS_HASH. Generate it using "
+                    "src/bootstrap_pyrogram_session.py while the channel has a public username."
+                )
+            try:
+                access_hash = int(access_hash_text)
+            except ValueError as exc:
+                raise RuntimeError("PYROGRAM_CHANNEL_ACCESS_HASH must be an integer.") from exc
+            if access_hash == 0:
+                raise RuntimeError(
+                    "PYROGRAM_CHANNEL_ACCESS_HASH must be the real non-zero hash; zero caused CHANNEL_INVALID."
+                )
+
             channel_id = int(target[4:])
             await client.storage.update_peers(
-                [(int(target), 0, "channel", None, None)]
+                [(int(target), access_hash, "channel", None, None)]
             )
             peer = await client.resolve_peer(int(target))
             if getattr(peer, "channel_id", None) != channel_id:
                 raise RuntimeError("Pyrogram resolved a peer that does not match TELEGRAM_TARGET.")
+            if getattr(peer, "access_hash", None) != access_hash:
+                raise RuntimeError("Pyrogram did not load the configured channel access hash.")
             upload_target = int(target)
 
         else:
-            # Preserve support for public usernames and ordinary numeric chats.
             upload_target = int(target) if target.lstrip("-").isdigit() else target
             await client.resolve_peer(upload_target)
 
@@ -76,7 +123,6 @@ async def _upload(path: Path, caption: str) -> int:
 def upload_video(path: Path, caption: str) -> int:
     if not path.is_file() or path.stat().st_size == 0:
         raise ValueError("Upload file is missing or empty")
-    # Keep a safety margin below Telegram's common 2 GiB MTProto file ceiling.
     if path.stat().st_size > 2_000_000_000:
         raise RuntimeError(
             "File exceeds the configured 2,000,000,000-byte limit. "
