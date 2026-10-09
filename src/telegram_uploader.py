@@ -24,9 +24,36 @@ async def _upload(path: Path, caption: str) -> int:
         bot_token=os.environ["BOT_TOKEN"],
         in_memory=True,
     )
+    target = os.environ["TELEGRAM_TARGET"].strip()
+    peer_source = os.environ.get("PYROGRAM_PEER_SOURCE", "").strip()
+
     async with client:
+        upload_target: int | str = target
+        if peer_source:
+            # A numeric private-channel ID alone does not carry MTProto's
+            # channel access_hash. Resolve the private invite link (or public
+            # username) first so Pyrogram caches the correct InputPeer.
+            chat = await client.get_chat(peer_source)
+            if target.lstrip("-").isdigit() and int(chat.id) != int(target):
+                raise RuntimeError(
+                    "PYROGRAM_PEER_SOURCE resolved to a different chat than TELEGRAM_TARGET."
+                )
+            await client.resolve_peer(chat.id)
+            upload_target = chat.id
+        elif target.startswith("-100") and target[1:].isdigit():
+            # Do not pretend a Bot API-valid ID is necessarily enough for MTProto.
+            try:
+                await client.resolve_peer(int(target))
+            except Exception as exc:
+                raise RuntimeError(
+                    "Pyrogram cannot resolve the private channel from TELEGRAM_TARGET alone. "
+                    "Add GitHub secret PYROGRAM_PEER_SOURCE containing a valid private invite "
+                    "link for this channel (or its public @username). The bot must already have "
+                    "access, and the source must identify the same destination."
+                ) from exc
+
         sent = await client.send_video(
-            chat_id=os.environ["TELEGRAM_TARGET"],
+            chat_id=upload_target,
             video=str(path),
             caption=caption[:1024],
             supports_streaming=True,
