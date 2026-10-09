@@ -94,6 +94,12 @@ jobs:
           print(f"Input validated; operation={os.environ['OPERATION']}; batch size={size}")
           PY
 
+      - name: Validate Python syntax
+        run: python -m compileall -q src tests
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
       - name: Run pipeline
         run: python -m src.main
 
