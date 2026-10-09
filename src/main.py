@@ -207,12 +207,19 @@ def process_batch(key: str, operation: str, batch_size: int, dry_run: bool) -> N
             log(f"Completed {source_id}; Telegram message_id={message_id}")
 
         except Exception as exc:
-            # 'uploading' is ambiguous if the request reached Telegram but the
-            # response was lost. Preserve it for manual reconciliation instead
-            # of risking an automatic duplicate upload.
-            if video.get("status") != "uploading":
+            error_text = f"{type(exc).__name__}: {exc}"[:1500]
+            # An invalid bot token fails during Telegram authorization, before
+            # send_video is attempted. It is safe to mark this item failed so
+            # retry_failed can process it after BOT_TOKEN is corrected.
+            definite_auth_failure = (
+                "ACCESS_TOKEN_INVALID" in error_text
+                or "auth.ImportBotAuthorization" in error_text
+            )
+            # Other failures after entering 'uploading' remain ambiguous: the
+            # request may have reached Telegram, so avoid automatic duplicates.
+            if video.get("status") != "uploading" or definite_auth_failure:
                 video["status"] = "failed"
-            video["last_error"] = f"{type(exc).__name__}: {exc}"[:1500]
+            video["last_error"] = error_text
             video["failed_at"] = now()
             persist_checkpoint(path, manifest, push=True)
             log(f"Failed {source_id}: {video['last_error']}")
