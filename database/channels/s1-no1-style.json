@@ -3,21 +3,21 @@
   "channel_key": "s1-no1-style",
   "source_url": "https://javtiful.com/channel/s1-no1-style",
   "created_at": "2026-10-09T18:21:08.799997+00:00",
-  "updated_at": "2026-10-09T18:39:33.136031+00:00",
+  "updated_at": "2026-10-09T18:39:34.560421+00:00",
   "total_discovered": 4101,
   "videos": [
     {
       "source_id": "114383",
       "title": "SNOS-343 My Teaching Career Seems To Be Ending Because Of This Student With A Miraculous Face And Body That Makes Everyone Turn Their Heads",
       "page_url": "https://javtiful.com/video/114383/snos-343",
-      "status": "downloaded",
+      "status": "uploading",
       "attempts": 2,
       "telegram_message_id": null,
       "last_error": null,
       "discovered_at": "2026-10-09T18:24:13.728524+00:00",
       "last_seen_at": "2026-10-09T18:24:13.728542+00:00",
       "downloaded_bytes": 1126642596,
-      "upload_started_at": "2026-10-09T18:33:44.929877+00:00",
+      "upload_started_at": "2026-10-09T18:39:34.560401+00:00",
       "failed_at": "2026-10-09T18:33:48.854580+00:00"
     },
     {
