@@ -32,9 +32,9 @@ Configure these under **Settings → Secrets and variables → Actions**:
 - `API_HASH`: Telegram API hash.
 - `BOT_TOKEN`: Telegram bot token.
 - `TELEGRAM_TARGET`: destination channel ID or username. The bot must have permission to post there.
-- `PYROGRAM_PEER_SOURCE` (recommended for private channels): a valid invite link for the same private channel, or its public `@username`. Store it as a GitHub Actions secret, not in the repository. The bot must already have access to the channel. The workflow resolves this source before attempting an MTProto upload so Pyrogram can cache the channel peer/access hash. This is separate from `TELEGRAM_TARGET`, which the Bot API uses for destination and permission checks.
+- `PYROGRAM_PEER_SOURCE` (optional): a public `@username` for the same destination. Do not use a private invite link here; Telegram's invite-check method is user-only and Pyrogram bot sessions receive `BOT_METHOD_INVALID` when trying to inspect it.
 
-For private channels, a Bot API-valid numeric ID does not by itself provide the MTProto channel access hash. A fresh in-memory Pyrogram bot session may therefore fail with `PEER_ID_INVALID`. Configure `PYROGRAM_PEER_SOURCE` and run **Actions → Verify Telegram Bot and Channel** before processing a batch. The verification workflow fails if Pyrogram still cannot resolve the peer; it does not send a test message.
+For private numeric channel IDs in the standard `-100...` format, the verifier and uploader seed Pyrogram's peer cache with Telegram's documented zero access hash for bot accounts, then resolve the resulting `InputPeerChannel`. This avoids relying on a fresh session's missing access-hash cache or an invite-link lookup. The verification workflow does not send a test message.
 
 Never commit credentials, private invite links, Telegram session files, cookies, or media files.
 
