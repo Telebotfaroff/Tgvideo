@@ -51,9 +51,11 @@ To create a persistent **bot-authorized** session and retrieve the real access h
 
 If you cannot temporarily make the channel public, do not guess an access hash or use zero. The bot must first receive a valid MTProto channel constructor through an authorized update or another supported resolution route. The standard hosted Bot API is an alternative only for files within its much smaller upload limit.
 
-Never commit credentials, private invite links, session strings, access hashes, cookies, or media files.
+### Test a real upload
 
-Never commit credentials, private invite links, Telegram session files, cookies, or media files.
+After adding the required secrets, open **Actions → Test Telegram Upload → Run workflow**. This manual workflow first checks Bot API permissions and MTProto peer resolution, then uploads a generated two-second test video to `TELEGRAM_TARGET`. It prints the Telegram message ID on success. This is the important end-to-end test: a peer-resolution PASS alone does not prove Telegram will accept the upload. The test video is posted to the destination channel, so run it only when that is okay.
+
+Never commit credentials, private invite links, session strings, access hashes, cookies, or media files.
 
 ## Repository state
 
