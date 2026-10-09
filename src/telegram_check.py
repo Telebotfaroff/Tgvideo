@@ -15,6 +15,13 @@ def required(name: str) -> str:
     return value
 
 
+def _is_invite_link(value: str) -> bool:
+    value = value.lower()
+    return any(marker in value for marker in (
+        "t.me/+", "t.me/joinchat/", "telegram.me/+", "telegram.me/joinchat/"
+    ))
+
+
 def bot_api(method: str, token: str, **params):
     response = requests.get(
         f"https://api.telegram.org/bot{token}/{method}",
@@ -70,27 +77,37 @@ async def verify_pyrogram(
     expected_chat_id: int,
     peer_source: str = "",
 ) -> bool:
-    """Verify the bot can resolve the destination for MTProto uploads."""
-    app = Client(
-        name="telegram-verification",
-        api_id=api_id,
-        api_hash=api_hash,
-        bot_token=token,
-        in_memory=True,
-    )
+    session_string = os.environ.get("PYROGRAM_SESSION_STRING", "").strip()
+    access_hash_text = os.environ.get("PYROGRAM_CHANNEL_ACCESS_HASH", "").strip()
+
+    if session_string:
+        app = Client(
+            "telegram-verification",
+            api_id=api_id,
+            api_hash=api_hash,
+            session_string=session_string,
+            in_memory=True,
+        )
+    else:
+        app = Client(
+            "telegram-verification",
+            api_id=api_id,
+            api_hash=api_hash,
+            bot_token=token,
+            in_memory=True,
+        )
+
     try:
         async with app:
             me = await app.get_me()
+            if not me.is_bot:
+                print("FAIL PYROGRAM_SESSION_STRING belongs to a user account, not a bot.")
+                return False
             print(f"PASS Pyrogram bot authentication: @{me.username or 'no_username'} (id={me.id})")
 
-            # A public username is the best peer source. Telegram's invite-check
-            # method is user-only, so a private invite link cannot be resolved
-            # by a bot via get_chat(). For bots, Telegram supports access_hash=0
-            # when the channel ID is known but no access hash has been cached.
-            if peer_source and not (
-                "t.me/+" in peer_source or "t.me/joinchat/" in peer_source
-                or "telegram.me/+" in peer_source or "telegram.me/joinchat/" in peer_source
-            ):
+            # A public username supplies the real peer information. Telegram's
+            # private invite check is user-only and cannot be used by bot sessions.
+            if peer_source and not _is_invite_link(peer_source):
                 try:
                     chat = await app.get_chat(peer_source)
                     if int(chat.id) != expected_chat_id:
@@ -99,38 +116,60 @@ async def verify_pyrogram(
                             f"expected {expected_chat_id}."
                         )
                         return False
-                    await app.resolve_peer(chat.id)
+                    peer = await app.resolve_peer(chat.id)
+                    if hasattr(peer, "access_hash") and not getattr(peer, "access_hash", 0):
+                        print("FAIL Public peer resolution returned no usable channel access hash.")
+                        return False
                     print(
-                        f"PASS Pyrogram peer resolved via PYROGRAM_PEER_SOURCE: "
+                        f"PASS Pyrogram peer resolved via public peer source: "
                         f"title={getattr(chat, 'title', None)!r}, type={chat.type}, id={chat.id}"
                     )
                     return True
                 except Exception as exc:
                     print(f"INFO Public peer-source lookup failed: {type(exc).__name__}: {exc}")
 
-            # Private Bot API channel IDs have the form -100<channel_id>.
-            # Telegram's MTProto peer database explicitly permits zero access
-            # hashes for bots when no access hash is available.
             target_text = str(target).strip()
             if target_text.startswith("-100") and target_text[1:].isdigit():
+                if not session_string:
+                    print(
+                        "FAIL Private-channel MTProto upload requires a persistent bot session. "
+                        "A fresh bot-token session cannot derive the channel access hash from "
+                        "the Bot API numeric ID."
+                    )
+                    return False
+                if not access_hash_text:
+                    print("FAIL Missing PYROGRAM_CHANNEL_ACCESS_HASH (real, non-zero channel hash).")
+                    return False
+                try:
+                    access_hash = int(access_hash_text)
+                except ValueError:
+                    print("FAIL PYROGRAM_CHANNEL_ACCESS_HASH must be an integer.")
+                    return False
+                if access_hash == 0:
+                    print("FAIL PYROGRAM_CHANNEL_ACCESS_HASH must be non-zero; zero hash was rejected by Telegram.")
+                    return False
+
                 channel_id = int(target_text[4:])
                 await app.storage.update_peers(
-                    [(expected_chat_id, 0, "channel", None, None)]
+                    [(expected_chat_id, access_hash, "channel", None, None)]
                 )
                 peer = await app.resolve_peer(expected_chat_id)
                 if getattr(peer, "channel_id", None) != channel_id:
                     print("FAIL Pyrogram resolved a peer that does not match TELEGRAM_TARGET.")
                     return False
+                if getattr(peer, "access_hash", None) != access_hash:
+                    print("FAIL Pyrogram did not load the configured channel access hash.")
+                    return False
                 print(
-                    f"PASS Pyrogram private-channel peer seeded for bot authorization: "
-                    f"channel_id={channel_id}, access_hash=0"
+                    f"PASS Pyrogram loaded private-channel peer for persistent bot session: "
+                    f"channel_id={channel_id}, real access hash configured."
                 )
                 return True
 
-            # Public usernames and non-channel destinations can still resolve
-            # directly from TELEGRAM_TARGET.
             try:
-                peer = await app.resolve_peer(int(target_text) if target_text.lstrip("-").isdigit() else target_text)
+                peer = await app.resolve_peer(
+                    int(target_text) if target_text.lstrip("-").isdigit() else target_text
+                )
                 print(f"PASS Pyrogram destination peer resolved directly: {peer!r}")
                 return True
             except Exception as exc:
@@ -155,8 +194,8 @@ def main() -> int:
         )
         if not pyrogram_ok:
             print(
-                "RESULT: FAIL — Bot API credentials/permissions are valid, but Pyrogram "
-                "could not resolve the destination peer."
+                "RESULT: FAIL — Bot API credentials/permissions are valid, but a usable "
+                "MTProto peer was not verified."
             )
             return 1
         print("RESULT: PASS — Bot API permissions and Pyrogram destination peer resolution succeeded.")
