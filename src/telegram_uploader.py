@@ -62,16 +62,27 @@ async def _upload(path: Path, caption: str) -> int:
         upload_target: int | str = target
 
         # Public usernames resolve the channel and its real access hash normally.
+        # If the channel was made private again after bootstrap, fall back to the
+        # stored session-specific access hash below.
+        resolved_public = False
         if peer_source and not _is_invite_link(peer_source):
-            chat = await client.get_chat(peer_source)
-            if target.lstrip("-").isdigit() and int(chat.id) != int(target):
-                raise RuntimeError(
-                    "PYROGRAM_PEER_SOURCE resolved to a different chat than TELEGRAM_TARGET."
-                )
-            await client.resolve_peer(chat.id)
-            upload_target = chat.id
+            try:
+                chat = await client.get_chat(peer_source)
+                if target.lstrip("-").isdigit() and int(chat.id) != int(target):
+                    raise RuntimeError(
+                        "PYROGRAM_PEER_SOURCE resolved to a different chat than TELEGRAM_TARGET."
+                    )
+                await client.resolve_peer(chat.id)
+                upload_target = chat.id
+                resolved_public = True
+            except Exception as exc:
+                if not (target.startswith("-100") and target[1:].isdigit() and session_string and access_hash_text):
+                    raise RuntimeError(
+                        f"Could not resolve PYROGRAM_PEER_SOURCE ({type(exc).__name__}: {exc})"
+                    ) from exc
+                print("INFO Public peer source is unavailable; using the stored private-channel access hash.")
 
-        elif target.startswith("-100") and target[1:].isdigit():
+        if not resolved_public and target.startswith("-100") and target[1:].isdigit():
             # A Bot API chat ID alone is insufficient for MTProto. The previous
             # zero-access-hash workaround passed peer construction but Telegram
             # rejected the actual upload with CHANNEL_INVALID.
@@ -107,7 +118,7 @@ async def _upload(path: Path, caption: str) -> int:
                 raise RuntimeError("Pyrogram did not load the configured channel access hash.")
             upload_target = int(target)
 
-        else:
+        elif not resolved_public:
             upload_target = int(target) if target.lstrip("-").isdigit() else target
             await client.resolve_peer(upload_target)
 
