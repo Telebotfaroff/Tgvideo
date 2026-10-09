@@ -1,0 +1,113 @@
+name: Tgvideo pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel_url:
+        description: "Studio/channel listing URL"
+        required: true
+        type: string
+      operation:
+        description: "Choose what the run should do"
+        required: true
+        default: scan
+        type: choice
+        options:
+          - scan
+          - process
+          - resume
+          - retry_failed
+      batch_size:
+        description: "Maximum videos to process in this run"
+        required: true
+        default: "10"
+        type: string
+      dry_run:
+        description: "Discover and validate without downloading or uploading"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tgvideo-channel-state
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      CHANNEL_URL: ${{ inputs.channel_url }}
+      OPERATION: ${{ inputs.operation }}
+      BATCH_SIZE: ${{ inputs.batch_size }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      API_ID: ${{ secrets.API_ID }}
+      API_HASH: ${{ secrets.API_HASH }}
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      TELEGRAM_TARGET: ${{ secrets.TELEGRAM_TARGET }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate inputs
+        run: |
+          python - <<'PY'
+          import os
+          from urllib.parse import urlparse
+
+          raw = os.environ["CHANNEL_URL"].strip()
+          parsed = urlparse(raw)
+          if parsed.scheme != "https" or not parsed.netloc:
+              raise SystemExit("channel_url must be a valid HTTPS URL")
+          try:
+              size = int(os.environ["BATCH_SIZE"])
+          except ValueError:
+              raise SystemExit("batch_size must be an integer")
+          if not 1 <= size <= 100:
+              raise SystemExit("batch_size must be between 1 and 100")
+          print(f"Input validated; batch size={size}")
+          PY
+
+      - name: Run pipeline
+        run: python -m src.main
+
+      - name: Commit manifest and checkpoints
+        if: success() && inputs.dry_run == false
+        run: |
+          if git diff --quiet -- database; then
+            echo "No database changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add database
+          git commit -m "chore: update crawl manifest and processing state"
+          git push
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tgvideo-run-logs
+          path: logs/
+          if-no-files-found: ignore
+          retention-days: 7
