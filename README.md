@@ -32,9 +32,26 @@ Configure these under **Settings → Secrets and variables → Actions**:
 - `API_HASH`: Telegram API hash.
 - `BOT_TOKEN`: Telegram bot token.
 - `TELEGRAM_TARGET`: destination channel ID or username. The bot must have permission to post there.
-- `PYROGRAM_PEER_SOURCE` (optional): a public `@username` for the same destination. Do not use a private invite link here; Telegram's invite-check method is user-only and Pyrogram bot sessions receive `BOT_METHOD_INVALID` when trying to inspect it.
+- `PYROGRAM_PEER_SOURCE` (optional): a public `@username` for the same destination. Private invite links cannot be resolved by a bot session.
+- `PYROGRAM_SESSION_STRING` (required for private numeric channel uploads): a persistent Pyrogram session string created while logged in as this bot.
+- `PYROGRAM_CHANNEL_ACCESS_HASH` (required with the session string for private numeric channel uploads): the real non-zero access hash for the destination channel, obtained using the same bot session.
 
-For private numeric channel IDs in the standard `-100...` format, the verifier and uploader seed Pyrogram's peer cache with Telegram's documented zero access hash for bot accounts, then resolve the resulting `InputPeerChannel`. This avoids relying on a fresh session's missing access-hash cache or an invite-link lookup. The verification workflow does not send a test message.
+### Setting up a private channel for MTProto uploads
+
+Telegram's Bot API can confirm that a bot is an admin, but it does not expose the MTProto channel access hash. The previous zero-hash workaround was rejected by Telegram with `CHANNEL_INVALID`. A numeric `-100...` ID alone is not enough for a fresh MTProto session. See the official [Telegram peer database documentation](https://core.telegram.org/api/peers) and [Pyrogram chat ID documentation](https://docs.pyrogram.org/topics/advanced-usage).
+
+To create a persistent **bot-authorized** session and retrieve the real access hash:
+
+1. Temporarily assign the destination channel a public `@username`. **While it has a username, the channel is public and its contents may be visible to anyone. Do not do this if that exposure is unacceptable.**
+2. On a trusted device with Python and the repository dependencies, run `python -m pip install -r requirements.txt`, then `python -m src.bootstrap_pyrogram_session`.
+3. Enter `API_ID`, `API_HASH`, `BOT_TOKEN`, the numeric `TELEGRAM_TARGET`, and the temporary public `@username`. The script verifies the username matches the destination and prints `PYROGRAM_SESSION_STRING` and `PYROGRAM_CHANNEL_ACCESS_HASH`.
+4. Restore the channel's private setting if desired. Add both printed values as GitHub Actions secrets with those exact names.
+5. Keep the session string private. It is an authentication credential. Use the session string and access hash together; the hash is tied to the bot's MTProto authorization session.
+6. Run **Actions → Verify Telegram Bot and Channel**. Peer-resolution PASS is not a substitute for a real upload test.
+
+If you cannot temporarily make the channel public, do not guess an access hash or use zero. The bot must first receive a valid MTProto channel constructor through an authorized update or another supported resolution route. The standard hosted Bot API is an alternative only for files within its much smaller upload limit.
+
+Never commit credentials, private invite links, session strings, access hashes, cookies, or media files.
 
 Never commit credentials, private invite links, Telegram session files, cookies, or media files.
 
