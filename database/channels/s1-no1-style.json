@@ -3,7 +3,7 @@
   "channel_key": "s1-no1-style",
   "source_url": "https://javtiful.com/channel/s1-no1-style",
   "created_at": "2026-10-09T18:21:08.799997+00:00",
-  "updated_at": "2026-10-09T18:33:44.929896+00:00",
+  "updated_at": "2026-10-09T18:33:48.854593+00:00",
   "total_discovered": 4101,
   "videos": [
     {
@@ -13,11 +13,12 @@
       "status": "uploading",
       "attempts": 1,
       "telegram_message_id": null,
-      "last_error": null,
+      "last_error": "AccessTokenInvalid: Telegram says: [400 ACCESS_TOKEN_INVALID] - The bot access token is invalid (caused by \"auth.ImportBotAuthorization\")",
       "discovered_at": "2026-10-09T18:24:13.728524+00:00",
       "last_seen_at": "2026-10-09T18:24:13.728542+00:00",
       "downloaded_bytes": 1126642596,
-      "upload_started_at": "2026-10-09T18:33:44.929877+00:00"
+      "upload_started_at": "2026-10-09T18:33:44.929877+00:00",
+      "failed_at": "2026-10-09T18:33:48.854580+00:00"
     },
     {
       "source_id": "114382",
