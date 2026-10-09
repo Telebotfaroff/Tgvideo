@@ -5,7 +5,7 @@ import os
 import sys
 
 from pyrogram import Client
-from pyrogram.enums import ChatMemberStatus
+from pyrogram.enums import ChatMemberStatus, ChatType
 
 
 def required(name: str) -> str:
@@ -39,7 +39,7 @@ async def verify() -> int:
             f"type={chat.type}, id={chat.id}"
         )
 
-        if chat.type not in ("channel", "supergroup"):
+        if chat.type not in (ChatType.CHANNEL, ChatType.SUPERGROUP):
             print("FAIL destination must be a Telegram channel or supergroup.")
             return 1
 
@@ -48,7 +48,7 @@ async def verify() -> int:
         print(f"INFO bot membership status: {status}")
 
         # Posting to a broadcast channel requires administrator privileges.
-        if chat.type == "channel":
+        if chat.type == ChatType.CHANNEL:
             if status not in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER):
                 print("FAIL bot is not an administrator of the destination channel.")
                 return 1
