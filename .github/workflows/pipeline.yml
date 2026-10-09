@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       channel_url:
-        description: "Studio/channel listing URL"
+        description: "Javtiful studio/channel listing URL"
         required: true
         type: string
       operation:
@@ -18,12 +18,12 @@ on:
           - resume
           - retry_failed
       batch_size:
-        description: "Maximum videos to process in this run"
+        description: "Maximum videos processed in this run"
         required: true
         default: "10"
         type: string
       dry_run:
-        description: "Discover and validate without downloading or uploading"
+        description: "Do not download/upload (scan still saves its inventory)"
         required: true
         default: true
         type: boolean
@@ -63,7 +63,12 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
-      - name: Install dependencies
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -76,31 +81,33 @@ jobs:
 
           raw = os.environ["CHANNEL_URL"].strip()
           parsed = urlparse(raw)
-          if parsed.scheme != "https" or not parsed.netloc:
-              raise SystemExit("channel_url must be a valid HTTPS URL")
+          if parsed.scheme != "https" or parsed.hostname != "javtiful.com":
+              raise SystemExit("channel_url must be an HTTPS javtiful.com URL")
+          if not parsed.path.startswith("/channel/"):
+              raise SystemExit("channel_url must be a /channel/... page")
           try:
               size = int(os.environ["BATCH_SIZE"])
           except ValueError:
               raise SystemExit("batch_size must be an integer")
           if not 1 <= size <= 100:
               raise SystemExit("batch_size must be between 1 and 100")
-          print(f"Input validated; batch size={size}")
+          print(f"Input validated; operation={os.environ['OPERATION']}; batch size={size}")
           PY
 
       - name: Run pipeline
         run: python -m src.main
 
-      - name: Commit manifest and checkpoints
-        if: success() && inputs.dry_run == false
+      - name: Commit remaining database changes
+        if: always()
         run: |
           if git diff --quiet -- database; then
-            echo "No database changes to commit."
+            echo "No uncommitted database changes."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add database
-          git commit -m "chore: update crawl manifest and processing state"
+          git commit -m "chore: persist channel inventory and processing state"
           git push
 
       - name: Upload diagnostic logs
@@ -111,3 +118,7 @@ jobs:
           path: logs/
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Clean temporary storage
+        if: always()
+        run: rm -rf tmp/downloads/*
