@@ -1,5 +1,0 @@
-yt-dlp
-Pyrogram
-TgCrypto
-requests
-beautifulsoup4
