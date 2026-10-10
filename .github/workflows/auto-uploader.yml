@@ -45,7 +45,7 @@ jobs:
           python -m json.tool database/processed.json >/dev/null
 
       - name: Run tests
-        run: pytest -q
+        run: python -m pytest -q
 
       - name: Process manifest
         env:
