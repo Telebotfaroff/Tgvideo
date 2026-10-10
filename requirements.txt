@@ -1,0 +1,5 @@
+Pyrogram>=2.0.106
+TgCrypto>=1.2.5
+requests>=2.32.0
+python-dotenv>=1.0.0
+pytest>=8.0.0
