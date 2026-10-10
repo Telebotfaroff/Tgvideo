@@ -51,33 +51,6 @@ def write_json_atomic(path: Path, data: dict) -> None:
     os.replace(temp_name, path)
 
 
-def normalize_target(value: str) -> str:
-    """Convert a public Telegram channel URL into a Pyrogram-resolvable target."""
-    target = value.strip()
-    if not target:
-        raise ValueError("Destination channel is required")
-
-    parsed = urlparse(target)
-    if parsed.scheme in {"http", "https"} and parsed.netloc.lower() in {
-        "t.me", "www.t.me", "telegram.me", "www.telegram.me"
-    }:
-        parts = [part for part in parsed.path.split("/") if part]
-        if len(parts) == 1 and not parts[0].startswith("+") and parts[0] not in {
-            "joinchat", "c", "s"
-        }:
-            return "@" + parts[0].lstrip("@")
-        raise ValueError(
-            "Use a public channel URL such as https://t.me/channelname; "
-            "for private channels, provide the numeric channel ID."
-        )
-
-    if target.startswith("@"):
-        return target
-    if "://" in target:
-        raise ValueError("Destination must be a Telegram channel URL, @username, or numeric ID")
-    return target
-
-
 def load_manifest(path: Path) -> list[dict]:
     data = read_json(path, {"items": []})
     if not isinstance(data.get("items"), list):
@@ -204,18 +177,13 @@ def main() -> int:
     if not checkpoint_path.is_absolute():
         checkpoint_path = ROOT / checkpoint_path
 
-    raw_target = (os.getenv("TELEGRAM_TARGET") or "").strip()
+    target = (os.getenv("TELEGRAM_TARGET") or "").strip()
     required = ["API_ID", "API_HASH", "BOT_TOKEN"]
     missing = [name for name in required if not os.getenv(name)]
-    if not raw_target:
+    if not target:
         missing.append("TELEGRAM_TARGET")
     if missing:
         LOG.error("Missing environment variables: %s", ", ".join(missing))
-        return 2
-    try:
-        target = normalize_target(raw_target)
-    except ValueError as exc:
-        LOG.error("%s", exc)
         return 2
 
     try:
