@@ -3,8 +3,8 @@ name: Telegram Auto Uploader
 on:
   workflow_dispatch:
     inputs:
-      channel_url:
-        description: "Destination Telegram channel URL, @username, or numeric channel ID"
+      javtiful_channel_url:
+        description: "Javtiful channel page URL (for example, https://javtiful.com/channel/s1-no1-style)"
         required: true
         type: string
   schedule:
@@ -57,7 +57,8 @@ jobs:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          TELEGRAM_TARGET: ${{ inputs.channel_url || secrets.TELEGRAM_TARGET }}
+          TELEGRAM_TARGET: ${{ secrets.TELEGRAM_TARGET }}
+          JAVTIFUL_CHANNEL_URL: ${{ inputs.javtiful_channel_url }}
           MAX_ITEM_ATTEMPTS: "5"
           LOG_LEVEL: INFO
         run: python -m app.main
