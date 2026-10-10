@@ -44,6 +44,9 @@ jobs:
           python -m json.tool database/authorized_media.json >/dev/null
           python -m json.tool database/processed.json >/dev/null
 
+      - name: Run tests
+        run: pytest -q
+
       - name: Process manifest
         env:
           API_ID: ${{ secrets.API_ID }}
